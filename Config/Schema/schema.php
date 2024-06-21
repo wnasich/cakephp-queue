@@ -36,7 +36,9 @@ class QueueSchema extends CakeSchema {
 		'workerkey' => ['type' => 'string', 'null' => true, 'default' => null, 'length' => 45, 'collate' => 'utf8_unicode_ci', 'charset' => 'utf8'],
 		'interval' => ['type' => 'integer', 'null' => false, 'default' => '0', 'length' => 10, 'comment' => 'in minutes'],
 		'status' => ['type' => 'integer', 'null' => false, 'default' => '0', 'length' => 2],
-		'indexes' => ['PRIMARY' => ['column' => 'id', 'unique' => 1]],
+		'indexes' => [
+			'PRIMARY' => ['column' => 'id', 'unique' => 1]
+		],
 		'tableParameters' => ['charset' => 'utf8', 'collate' => 'utf8_unicode_ci']
 	];
 
@@ -49,14 +51,17 @@ class QueueSchema extends CakeSchema {
 		'created' => ['type' => 'datetime', 'null' => false, 'default' => null],
 		'notbefore' => ['type' => 'datetime', 'null' => true, 'default' => null],
 		'fetched' => ['type' => 'datetime', 'null' => true, 'default' => null],
-		'progress' => ['type' => 'float', 'null' => true, 'default' => null, 'length' => '3,2'],
+		'progress' => ['type' => 'decimal', 'null' => true, 'default' => null, 'length' => '3,2'],
 		'completed' => ['type' => 'datetime', 'null' => true, 'default' => null],
 		'failed' => ['type' => 'integer', 'null' => false, 'default' => '0', 'length' => 3],
+		'priority' => ['type' => 'integer', 'null' => false, 'default' => '5', 'length' => 4, 'key' => 'index'],
 		'failure_message' => ['type' => 'text', 'null' => true, 'default' => null, 'collate' => 'utf8_unicode_ci', 'charset' => 'utf8'],
 		'workerkey' => ['type' => 'string', 'null' => true, 'default' => null, 'length' => 45, 'collate' => 'utf8_unicode_ci', 'charset' => 'utf8'],
-		'indexes' => ['PRIMARY' => ['column' => 'id', 'unique' => 1]],
+		'indexes' => [
+			'PRIMARY' => ['column' => 'id', 'unique' => 1],
+			'priority' => ['column' => 'priority', 'unique' => 0]
+		],
 		'tableParameters' => ['charset' => 'utf8', 'collate' => 'utf8_unicode_ci']
 	];
 
 }
-

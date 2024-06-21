@@ -37,7 +37,7 @@ class QueuedTask extends QueueAppModel {
 		parent::__construct($id, $table, $ds);
 
 		// set virtualFields
-		$this->virtualFields['status'] = '(CASE WHEN ' . $this->alias . '.notbefore > NOW() THEN \'NOT_READY\' WHEN ' . $this->alias . '.fetched IS null THEN \'NOT_STARTED\' WHEN ' . $this->alias . '.fetched IS NOT null AND ' . $this->alias . '.completed IS null AND ' . $this->alias . '.failed = 0 THEN \'IN_PROGRESS\' WHEN ' . $this->alias . '.fetched IS NOT null AND ' . $this->alias . '.completed IS null AND ' . $this->alias . '.failed > 0 THEN \'FAILED\' WHEN ' . $this->alias . '.fetched IS NOT null AND ' . $this->alias . '.completed IS NOT null THEN \'COMPLETED\' ELSE \'UNKNOWN\' END)';
+		$this->virtualFields['status'] = '(CASE WHEN ' . $this->alias . '.notbefore > GETDATE() THEN \'NOT_READY\' WHEN ' . $this->alias . '.fetched IS null THEN \'NOT_STARTED\' WHEN ' . $this->alias . '.fetched IS NOT null AND ' . $this->alias . '.completed IS null AND ' . $this->alias . '.failed = 0 THEN \'IN_PROGRESS\' WHEN ' . $this->alias . '.fetched IS NOT null AND ' . $this->alias . '.completed IS null AND ' . $this->alias . '.failed > 0 THEN \'FAILED\' WHEN ' . $this->alias . '.fetched IS NOT null AND ' . $this->alias . '.completed IS NOT null THEN \'COMPLETED\' ELSE \'UNKNOWN\' END)';
 	}
 
 /**
@@ -118,7 +118,7 @@ class QueuedTask extends QueueAppModel {
 		$whereClause = [];
 		$wasFetched = [];
 
-		$this->virtualFields['age'] = 'IFNULL(TIMESTAMPDIFF(SECOND, NOW(),notbefore), 0)';
+		$this->virtualFields['age'] = 'ISNULL(DATEDIFF(SECOND, GETDATE(),notbefore), 0)';
 		$findCond = [
 			'conditions' => [
 				'completed' => null,
@@ -164,7 +164,7 @@ class QueuedTask extends QueueAppModel {
 				'failed <' => ($task['retries'] + 1)
 			];
 			if (array_key_exists('rate', $task) && $tmp['jobtype'] && array_key_exists($tmp['jobtype'], $this->rateHistory)) {
-				$tmp['NOW() >='] = date('Y-m-d H:i:s', $this->rateHistory[$tmp['jobtype']] + $task['rate']);
+				$tmp['GETDATE() >='] = date('Y-m-d H:i:s', $this->rateHistory[$tmp['jobtype']] + $task['rate']);
 			}
 			$findCond['conditions']['OR'][] = $tmp;
 		}
@@ -178,7 +178,7 @@ class QueuedTask extends QueueAppModel {
 		// Generate a list of already fetched ID's and a where clause for the update statement
 		$capTimeout = Hash::combine($capabilities, '{s}.name', '{s}.timeout');
 		foreach ($data as $item) {
-			$whereClause[] = '(id = ' . $item[$this->alias]['id'] . ' AND (workerkey IS NULL OR fetched <= "' . date('Y-m-d H:i:s', time() - $capTimeout[$item[$this->alias]['jobtype']]) . '"))';
+			$whereClause[] = '(id = ' . $item[$this->alias]['id'] . ' AND (workerkey IS NULL OR fetched <= \'' . date('Y-m-d H:i:s', time() - $capTimeout[$item[$this->alias]['jobtype']]) . '\'))';
 			if (!empty($item[$this->alias]['fetched'])) {
 				$wasFetched[] = $item[$this->alias]['id'];
 			}
@@ -188,7 +188,12 @@ class QueuedTask extends QueueAppModel {
 		//debug($key);ob_flush();
 
 		// try to update one of the found tasks with the key of this worker.
-		$this->query('UPDATE ' . $this->tablePrefix . $this->table . ' SET workerkey = "' . $key . '", fetched = "' . date('Y-m-d H:i:s') . '" WHERE ' . implode(' OR ', $whereClause) . ' ORDER BY priority ASC, ' . $this->virtualFields['age'] . ' ASC, id ASC LIMIT 1');
+
+		$updateQuery = "WITH cte AS (SELECT TOP 1 * FROM " . $this->tablePrefix . $this->table .
+			" WHERE " . implode(' OR ', $whereClause) . " ORDER BY " . $this->virtualFields['age'] . " ASC, id ASC)" .
+			" UPDATE cte SET workerkey =  '" . $key . "', fetched = '" . date('Y-m-d H:i:s') . "'";
+
+		$this->query($updateQuery);
 
 		// Read which one actually got updated, which is the job we are supposed to execute.
 		$data = $this->find('first', [

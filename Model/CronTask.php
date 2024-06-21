@@ -129,7 +129,7 @@ class CronTask extends QueueAppModel {
 			'fields' => [
 				'id',
 				'fetched',
-				'timediff(NOW(),notbefore) AS age'
+				'timediff(GETDATE(),notbefore) AS age'
 			],
 			'order' => [
 				'priority ASC',
@@ -164,7 +164,7 @@ class CronTask extends QueueAppModel {
 				'failed <' => ($task['retries'] + 1)
 			];
 			if (array_key_exists('rate', $task) && array_key_exists($tmp['jobtype'], $this->rateHistory)) {
-				$tmp['NOW() >='] = date('Y-m-d H:i:s', $this->rateHistory[$tmp['jobtype']] + $task['rate']);
+				$tmp['GETDATE() >='] = date('Y-m-d H:i:s', $this->rateHistory[$tmp['jobtype']] + $task['rate']);
 			}
 			$findConf['conditions']['OR'][] = $tmp;
 		}
@@ -184,7 +184,7 @@ class CronTask extends QueueAppModel {
 		// Generate a unique Identifier for the current worker thread
 		$key = sha1(microtime());
 		// try to update one of the found tasks with the key of this worker.
-		$this->query('UPDATE ' . $this->tablePrefix . $this->table . ' SET workerkey = "' . $key . '", fetched = "' . date('Y-m-d H:i:s') . '" WHERE id in(' . implode(',', $idlist) . ') AND (workerkey IS null OR     fetched <= "' . date('Y-m-d H:i:s', time() - $task['timeout']) . '") ORDER BY timediff(NOW(),notbefore) DESC LIMIT 1');
+		$this->query('UPDATE ' . $this->tablePrefix . $this->table . ' SET workerkey = "' . $key . '", fetched = "' . date('Y-m-d H:i:s') . '" WHERE id in(' . implode(',', $idlist) . ') AND (workerkey IS null OR     fetched <= "' . date('Y-m-d H:i:s', time() - $task['timeout']) . '") ORDER BY timediff(GETDATE(),notbefore) DESC LIMIT 1');
 		// read which one actually got updated, which is the job we are supposed to execute.
 		$data = $this->find('first', [
 			'conditions' => [
@@ -318,7 +318,7 @@ class CronTask extends QueueAppModel {
 
 			$query['fields'] = [
 				$this->alias . '.reference',
-				'(CASE WHEN ' . $this->alias . '.notbefore > NOW() THEN \'NOT_READY\' WHEN ' . $this->alias . '.fetched IS null THEN \'NOT_STARTED\' WHEN ' . $this->alias . '.fetched IS NOT null AND ' . $this->alias . '.completed IS null AND ' . $this->alias . '.failed = 0 THEN \'IN_PROGRESS\' WHEN ' . $this->alias . '.fetched IS NOT null AND ' . $this->alias . '.completed IS null AND ' . $this->alias . '.failed > 0 THEN \'FAILED\' WHEN ' . $this->alias . '.fetched IS NOT null AND ' . $this->alias . '.completed IS NOT null THEN \'COMPLETED\' ELSE \'UNKNOWN\' END) AS status',
+				'(CASE WHEN ' . $this->alias . '.notbefore > GETDATE() THEN \'NOT_READY\' WHEN ' . $this->alias . '.fetched IS null THEN \'NOT_STARTED\' WHEN ' . $this->alias . '.fetched IS NOT null AND ' . $this->alias . '.completed IS null AND ' . $this->alias . '.failed = 0 THEN \'IN_PROGRESS\' WHEN ' . $this->alias . '.fetched IS NOT null AND ' . $this->alias . '.completed IS null AND ' . $this->alias . '.failed > 0 THEN \'FAILED\' WHEN ' . $this->alias . '.fetched IS NOT null AND ' . $this->alias . '.completed IS NOT null THEN \'COMPLETED\' ELSE \'UNKNOWN\' END) AS status',
 				$this->alias . '.failure_message'
 			];
 			if (isset($query['conditions']['exclude'])) {
