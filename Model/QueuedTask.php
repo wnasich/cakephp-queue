@@ -36,8 +36,14 @@ class QueuedTask extends QueueAppModel {
 	public function __construct($id = false, $table = null, $ds = null) {
 		parent::__construct($id, $table, $ds);
 
+		if (isCurrentDbEngine('Database/Sqlserver')) {
+			$nowFunction = 'GETDATE';
+		} else {
+			$nowFunction = 'NOW';
+		}
+
 		// set virtualFields
-		$this->virtualFields['status'] = '(CASE WHEN ' . $this->alias . '.notbefore > GETDATE() THEN \'NOT_READY\' WHEN ' . $this->alias . '.fetched IS null THEN \'NOT_STARTED\' WHEN ' . $this->alias . '.fetched IS NOT null AND ' . $this->alias . '.completed IS null AND ' . $this->alias . '.failed = 0 THEN \'IN_PROGRESS\' WHEN ' . $this->alias . '.fetched IS NOT null AND ' . $this->alias . '.completed IS null AND ' . $this->alias . '.failed > 0 THEN \'FAILED\' WHEN ' . $this->alias . '.fetched IS NOT null AND ' . $this->alias . '.completed IS NOT null THEN \'COMPLETED\' ELSE \'UNKNOWN\' END)';
+		$this->virtualFields['status'] = '(CASE WHEN ' . $this->alias . '.notbefore > ' . $nowFunction . '() THEN \'NOT_READY\' WHEN ' . $this->alias . '.fetched IS null THEN \'NOT_STARTED\' WHEN ' . $this->alias . '.fetched IS NOT null AND ' . $this->alias . '.completed IS null AND ' . $this->alias . '.failed = 0 THEN \'IN_PROGRESS\' WHEN ' . $this->alias . '.fetched IS NOT null AND ' . $this->alias . '.completed IS null AND ' . $this->alias . '.failed > 0 THEN \'FAILED\' WHEN ' . $this->alias . '.fetched IS NOT null AND ' . $this->alias . '.completed IS NOT null THEN \'COMPLETED\' ELSE \'UNKNOWN\' END)';
 	}
 
 /**
@@ -117,8 +123,17 @@ class QueuedTask extends QueueAppModel {
 	public function requestJob($capabilities, $group = null) {
 		$whereClause = [];
 		$wasFetched = [];
+		if (isCurrentDbEngine('Database/Sqlserver')) {
+			$isNullFunction = 'ISNULL';
+			$nowFunction = 'GETDATE';
+			$dateDiffFunction = 'DATEDIFF';
+		} else {
+			$isNullFunction = 'IFNULL';
+			$nowFunction = 'NOW';
+			$dateDiffFunction = 'TIMESTAMPDIFF';
+		}
 
-		$this->virtualFields['age'] = 'ISNULL(DATEDIFF(SECOND, GETDATE(),notbefore), 0)';
+		$this->virtualFields['age'] = $isNullFunction . '(' . $dateDiffFunction . '(SECOND, ' . $nowFunction . '(), notbefore), 0)';
 		$findCond = [
 			'conditions' => [
 				'completed' => null,
@@ -164,7 +179,7 @@ class QueuedTask extends QueueAppModel {
 				'failed <' => ($task['retries'] + 1)
 			];
 			if (array_key_exists('rate', $task) && $tmp['jobtype'] && array_key_exists($tmp['jobtype'], $this->rateHistory)) {
-				$tmp['GETDATE() >='] = date('Y-m-d H:i:s', $this->rateHistory[$tmp['jobtype']] + $task['rate']);
+				$tmp[$nowFunction . '() >='] = date('Y-m-d H:i:s', $this->rateHistory[$tmp['jobtype']] + $task['rate']);
 			}
 			$findCond['conditions']['OR'][] = $tmp;
 		}
@@ -188,12 +203,14 @@ class QueuedTask extends QueueAppModel {
 		//debug($key);ob_flush();
 
 		// try to update one of the found tasks with the key of this worker.
-
-		$updateQuery = "WITH cte AS (SELECT TOP 1 * FROM " . $this->tablePrefix . $this->table .
-			" WHERE " . implode(' OR ', $whereClause) . " ORDER BY " . $this->virtualFields['age'] . " ASC, id ASC)" .
-			" UPDATE cte SET workerkey =  '" . $key . "', fetched = '" . date('Y-m-d H:i:s') . "'";
-
-		$this->query($updateQuery);
+		if (isCurrentDbEngine('Database/Sqlserver')) {
+			$updateQuery = "WITH cte AS (SELECT TOP 1 * FROM " . $this->tablePrefix . $this->table .
+				" WHERE " . implode(' OR ', $whereClause) . " ORDER BY " . $this->virtualFields['age'] . " ASC, id ASC)" .
+				" UPDATE cte SET workerkey =  '" . $key . "', fetched = '" . date('Y-m-d H:i:s') . "'";
+			$this->query($updateQuery);
+		} else {
+			$this->query('UPDATE ' . $this->tablePrefix . $this->table . ' SET workerkey = "' . $key . '", fetched = "' . date('Y-m-d H:i:s') . '" WHERE ' . implode(' OR ', $whereClause) . ' ORDER BY priority ASC, ' . $this->virtualFields['age'] . ' ASC, id ASC LIMIT 1');
+		}
 
 		// Read which one actually got updated, which is the job we are supposed to execute.
 		$data = $this->find('first', [
